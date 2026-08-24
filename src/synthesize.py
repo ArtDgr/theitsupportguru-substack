@@ -82,9 +82,30 @@ Sources to synthesize (cite each claim):
 
 Output markdown with title "# {{Title}} — {{Date AEST}}" and all required sections from system prompt. Include <!-- paid --> before Paid Playbook. Footer disclosure required.
 """
+    # try Gemini free first, then OpenAI, then fallback
+    gem_key=os.environ.get("GEMINI_API_KEY","")
+    if gem_key and not gem_key.startswith("dummy") and gem_key!="":
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=gem_key)
+            model=genai.GenerativeModel("gemini-1.5-flash")
+            resp=model.generate_content(system + "\n\n" + user)
+            draft=resp.text.strip()
+            if "<!-- paid -->" not in draft:
+                draft=draft.replace("## Paid Playbook","<!-- paid -->\n## Paid Playbook")
+            DRAFTS.mkdir(parents=True, exist_ok=True)
+            fname = f"{aest_now.strftime('%Y-%m-%d')}-{edition.split()[0].lower()}.md"
+            (DRAFTS / fname).write_text(draft, encoding="utf-8")
+            OUT.write_text(draft, encoding="utf-8")
+            print(f"Gemini draft -> drafts/{fname} ({len(draft)} chars) AEST {aest_now.isoformat()}")
+            return draft
+        except Exception as e:
+            print(f"Gemini synthesize failed ({e}) -> try OpenAI fallback")
     # try OpenAI, fallback to heuristic if invalid key
     try:
         client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+        if not os.environ.get("OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY","").startswith("sk-dummy"):
+            raise ValueError("No valid OPENAI_API_KEY")
         resp = client.chat.completions.create(
             model=os.environ.get("OPENAI_MODEL","gpt-4o"),
             messages=[{"role":"system","content": system},{"role":"user","content": user}],

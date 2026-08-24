@@ -83,6 +83,31 @@ def send_via_telegram_gate(draft_md):
         print(f"Telegram fail: {e}")
         return False
 
+def buffer_queue(draft_md, substack_url="https://theitsupportguru.substack.com"):
+    """Buffer/Publer queue for X/LinkedIn - free tier: 3 channels, 10 posts"""
+    token=os.environ.get("BUFFER_TOKEN","")
+    profiles=os.environ.get("BUFFER_PROFILE_IDS","") # comma sep e.g. "abc,def,ghi"
+    if not token or not profiles:
+        print("Buffer not configured - skip queue (set BUFFER_TOKEN + BUFFER_PROFILE_IDS for free tier)")
+        return False
+    try:
+        import requests
+        title="The IT Support Guru Brief"
+        for line in draft_md.splitlines():
+            if line.startswith("# "):
+                title=line[2:].strip()[:80]; break
+        text=f"{title} — {substack_url} #Windows #MSP #Cybersecurity AEST {datetime.now(AEST).strftime('%Y-%m-%d')}"
+        # Buffer free: queue to each profile
+        for pid in [p.strip() for p in profiles.split(",") if p.strip()]:
+            r=requests.post("https://api.bufferapp.com/1/updates/create.json",
+                data={"text": text[:260], "profile_ids[]": pid, "access_token": token}, timeout=10)
+            print(f"Buffer queue {pid}: {r.status_code} {r.text[:120]}")
+        # Alternative free: Ayrshare/Publer - if BUFFER_TOKEN empty, try PUBLER_API_KEY
+        return True
+    except Exception as e:
+        print(f"Buffer fail: {e}")
+        return False
+
 def publish_email(draft_md):
     """Send via Substack Email-to-Post - whitelisted, no bot check"""
     secret = os.environ.get("SUBSTACK_EMAIL")
@@ -146,16 +171,20 @@ if __name__ == "__main__":
     # 2. Gate check
     if should_auto_publish():
         print("Gate PASSED (auto) - publishing")
-        publish_email(draft)
+        ok=publish_email(draft)
+        if ok:
+            buffer_queue(draft)
     else:
         print("Gate ACTIVE (human approve) - sending to Telegram")
         sent = send_via_telegram_gate(draft)
         if not sent:
             print("Gate: draft awaiting manual publish - check drafts/ folder AEST")
-        # Also save email eml for manual send test
+        # Also save email eml for manual review
         if os.environ.get("SMTP_USER"):
             pass # already handled
         else:
             # create eml for manual review
-            try: publish_email(draft)
+            try:
+                publish_email(draft)
+                buffer_queue(draft)
             except SystemExit: pass
