@@ -20,22 +20,29 @@ STATE = Path(__file__).parent.parent / "out" / "state.json"
 
 def aest_jitter_sleep():
     """Random sleep to shift publish into 06:12-06:27 AEST window - defeats cron-bot fingerprint"""
-    # Caller cron is 18:00 UTC (=04:00 AEST). Need to sleep until ~06:12-06:27 AEST = 20:12-20:27 UTC
-    # If running at 04:00 AEST, sleep 2h12m +/- random. But cron runs at 18:00 UTC already.
-    # Simpler: random 12-27 min + 0-59 sec jitter regardless, so each publish second varies
-    j_min = random.randint(12,27)
-    j_sec = random.randint(0,59)
-    total = j_min*60 + j_sec
-    # plus base 2h if we ingested at 04:00 AEST and cron fired at 04:00 - ensures 06:xx send
-    # Our cron is 18:00 UTC = 04:00 AEST, so add 7200 sec base
-    base = 7200
-    sleep_s = base + total
-    aest_target = datetime.now(AEST) + timedelta(seconds=sleep_s)
-    print(f"[AEST] Jitter: sleeping {sleep_s}s -> target {aest_target.strftime('%H:%M:%S AEST')} (12-27m random)")
-    # In CI, actually sleep - but cap for test runs
-    if os.environ.get("SKIP_SLEEP") != "1":
-        time.sleep(sleep_s if os.environ.get("CI") else min(sleep_s, 5))
-    return aest_target
+    # Detect manual dispatch vs cron: dispatch uses short jitter (no 2h base)
+    is_cron = os.environ.get("GITHUB_EVENT_NAME") == "schedule"
+    is_ci = os.environ.get("CI") == "1"
+    if is_cron and is_ci:
+        # Real cron: 18:00 UTC =04:00 AEST -> need 2h12-27m to hit 06:12-06:27 AEST
+        j_min = random.randint(12,27)
+        j_sec = random.randint(0,59)
+        sleep_s = 7200 + j_min*60 + j_sec
+        aest_target = datetime.now(AEST) + timedelta(seconds=sleep_s)
+        print(f"[AEST] Cron jitter: sleeping {sleep_s}s -> target {aest_target.strftime('%H:%M:%S AEST')} (12-27m +2h base)")
+        if os.environ.get("SKIP_SLEEP") != "1":
+            time.sleep(sleep_s)
+        return aest_target
+    else:
+        # Manual dispatch / local: short 12-27s jitter only - defeats bot second fingerprint without 2h wait
+        j_sec = random.randint(12,27)
+        j_ms = random.randint(0,999)
+        sleep_s = j_sec
+        aest_target = datetime.now(AEST) + timedelta(seconds=sleep_s)
+        print(f"[AEST] Dispatch jitter: sleeping {sleep_s}.{j_ms:03d}s -> target {aest_target.strftime('%H:%M:%S AEST')} (short random)")
+        if os.environ.get("SKIP_SLEEP") != "1":
+            time.sleep(sleep_s)
+        return aest_target
 
 def load_draft():
     # pick latest draft if out/draft.md missing
