@@ -25,18 +25,29 @@ def heuristic_score(it):
     return min(10,s)
 
 def gemini_score(text):
-    """Gemini 2.5 Flash free tier scorer - google.genai"""
+    """Gemini Flash free tier scorer - google.genai"""
     try:
         from google import genai
         client=genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-        resp=client.models.generate_content(model="gemini-2.5-flash", contents=PROMPT + "\n\n" + text)
-        return resp.text
+        # Use flash-latest (available to new users) - 2.5-flash deprecated per 404
+        for m in ["gemini-flash-latest", "gemini-2.0-flash", "gemini-pro-latest"]:
+            try:
+                resp=client.models.generate_content(model=m, contents=PROMPT + "\n\n" + text)
+                return resp.text
+            except Exception as e:
+                if "404" in str(e) or "503" in str(e): continue
+                raise
+        raise ValueError("No Gemini model available")
     except ImportError:
         import google.generativeai as genai2
         genai2.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-        model=genai2.GenerativeModel("gemini-2.5-flash")
-        resp=model.generate_content(PROMPT + "\n\n" + text)
-        return resp.text
+        for m in ["gemini-flash-latest", "gemini-1.5-flash"]:
+            try:
+                model=genai2.GenerativeModel(m)
+                resp=model.generate_content(PROMPT + "\n\n" + text)
+                return resp.text
+            except: continue
+        raise
 
 def score_items():
     gem_key=os.environ.get("GEMINI_API_KEY","")
