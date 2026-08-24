@@ -18,23 +18,53 @@ DRAFT = Path(__file__).parent.parent / "out" / "draft.md"
 DRAFTS = Path(__file__).parent.parent / "drafts"
 STATE = Path(__file__).parent.parent / "out" / "state.json"
 
+def check_monthly_cap():
+    """Enforce max 12/mo hard cap - update state on publish"""
+    now=datetime.now(AEST)
+    yyyymm=now.strftime("%Y-%m")
+    state={}
+    if STATE.exists():
+        try: state=json.loads(STATE.read_text())
+        except: state={}
+    count=state.get(f"published_{yyyymm}",0)
+    if count >= 12:
+        print(f"[CAP] SKIP - max 12 reached for {yyyymm} ({count}/12) AEST - Substack compliance")
+        return False
+    return True
+
+def record_publish():
+    now=datetime.now(AEST)
+    yyyymm=now.strftime("%Y-%m")
+    state={}
+    if STATE.exists():
+        try: state=json.loads(STATE.read_text())
+        except: state={}
+    key=f"published_{yyyymm}"
+    state[key]=state.get(key,0)+1
+    state["last_publish"]=now.isoformat()
+    state["approved_count"]=state.get("approved_count",0)+1
+    STATE.write_text(json.dumps(state, indent=2))
+
 def aest_jitter_sleep():
-    """Random sleep to shift publish into 06:12-06:27 AEST window - defeats cron-bot fingerprint"""
-    # Detect manual dispatch vs cron: dispatch uses short jitter (no 2h base)
+    """Random sleep 06:12-09:47 AEST window - defeats cron-bot fingerprint, Substack variance"""
     is_cron = os.environ.get("GITHUB_EVENT_NAME") == "schedule"
     is_ci = os.environ.get("CI") == "1"
     if is_cron and is_ci:
-        # Real cron: 18:00 UTC =04:00 AEST -> need 2h12-27m to hit 06:12-06:27 AEST
-        j_min = random.randint(12,27)
+        # Daily 04:00 AEST cron -> random 06:12-09:47 (2h12m to 5h47m)
+        # Random hour 06-09, minute 12-47, second 0-59 for full variance
+        j_hour = random.randint(2,5) # 2-5h after 04:00
+        j_min = random.randint(12,47)
         j_sec = random.randint(0,59)
-        sleep_s = 7200 + j_min*60 + j_sec
+        # Weight earlier hours for IT admin morning read (06-07 more likely)
+        if random.random() < 0.65:
+            j_hour = random.randint(2,3) # bias 06-07
+        sleep_s = j_hour*3600 + j_min*60 + j_sec
         aest_target = datetime.now(AEST) + timedelta(seconds=sleep_s)
-        print(f"[AEST] Cron jitter: sleeping {sleep_s}s -> target {aest_target.strftime('%H:%M:%S AEST')} (12-27m +2h base)")
+        print(f"[AEST] Cron jitter: sleeping {sleep_s}s -> target {aest_target.strftime('%H:%M:%S %a %d %b AEST')} (06:12-09:47 random, bias 06-07)")
         if os.environ.get("SKIP_SLEEP") != "1":
             time.sleep(sleep_s)
         return aest_target
     else:
-        # Manual dispatch / local: short 12-27s jitter only - defeats bot second fingerprint without 2h wait
         j_sec = random.randint(12,27)
         j_ms = random.randint(0,999)
         sleep_s = j_sec
@@ -185,13 +215,15 @@ def publish_email(draft_md):
         s.login(smtp_user, smtp_pass)
         s.send_message(msg)
     print(f"Published via Email-to-Post AEST {datetime.now(AEST).isoformat()} subject='{subject}' -> {secret}")
-    # Update state
-    cnt = 0
-    if STATE.exists(): cnt=json.loads(STATE.read_text()).get("approved_count",0)
-    STATE.write_text(json.dumps({"approved_count":cnt+1,"last_publish":datetime.now(AEST).isoformat()},indent=2))
+    record_publish()
     return True
 
 if __name__ == "__main__":
+    if Path("out/skip_gate").exists():
+        print(f"Gate skip marker exists ({Path('out/skip_gate').read_text()}) - random AEST gate chose SKIP, exiting (max 12/mo)")
+        raise SystemExit(0)
+    if not check_monthly_cap():
+        raise SystemExit(0)
     draft = load_draft()
     aest_jitter_sleep()
     # Always attempt social queue (Ayrshare free) even during gate - independent of Email

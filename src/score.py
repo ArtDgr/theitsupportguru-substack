@@ -8,16 +8,20 @@ INGEST = Path(__file__).parent.parent / "out" / "ingest.json"
 SCORED = Path(__file__).parent.parent / "out" / "scored.json"
 CONFIG = Path(__file__).parent.parent / "config" / "sources.yaml"
 
-PROMPT = """Score 0-10 for relevance to Windows MSP/Sysadmin/Entra fleet in Australia (AEST).
-10=Patch Tuesday/KEV/Intune/Entra breaking change. 5=generic AI news. 0=irrelevant.
+PROMPT = """Score 0-10 for relevance to IT admin & enterprise Windows fleet (MSP/Sysadmin/Entra) in Australia (AEST).
+Prioritize: Intune/MSP/Entra ID/Defender/AD/GPO/Patch Tuesday/CVE/KEV. Downrank consumer/gaming.
+10=Patch Tuesday/KEV/Intune/Entra/Admin breaking. 5=generic AI. 0=irrelevant consumer.
 Return JSON: {{"score": int, "reason": "1 sentence"}}"""
 
 def heuristic_score(it):
     t=(it['title']+' '+it['summary']).lower()
-    s=5.0+it.get('weight',1)
-    if any(k in t for k in ['cve','entra','patch','windows 11','intune','microsoft','exploit','ransom','kev','defender','btr.sys','synkloader']): s+=2
-    if 'entra' in t: s+=1.5
-    if 'cisa' in t: s+=1
+    s=4.0+it.get('weight',1)
+    # IT admin & enterprise bias (higher weight)
+    if any(k in t for k in ['intune','entra id','defender','active directory','group policy','wsus','sccm','patch tuesday','kb50','windows server','azure ad','conditional access']): s+=3
+    if any(k in t for k in ['msp','helpdesk','sophos','datto','kaseya','n-able','passportal','rce','privilege escalation','cve','kev','cisa','exploit','ransom']): s+=2
+    if any(k in t for k in ['copilot','windows 11','outlook','teams','sharepoint']): s+=1
+    if 'entra' in t: s+=1.0
+    if 'cisa' in t: s+=0.8
     return min(10,s)
 
 def gemini_score(text):
