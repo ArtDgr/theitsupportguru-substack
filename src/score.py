@@ -12,8 +12,18 @@ PROMPT = """Score 0-10 for relevance to Windows MSP/Sysadmin/Entra fleet in Aust
 10=Patch Tuesday/KEV/Intune/Entra breaking change. 5=generic AI news. 0=irrelevant.
 Return JSON: {{"score": int, "reason": "1 sentence"}}"""
 
+def heuristic_score(it):
+    t=(it['title']+' '+it['summary']).lower()
+    s=5.0+it.get('weight',1)
+    if any(k in t for k in ['cve','entra','patch','windows 11','intune','microsoft','exploit','ransom','kev','defender','btr.sys','synkloader']): s+=2
+    if 'entra' in t: s+=1.5
+    if 'cisa' in t: s+=1
+    return min(10,s)
+
 def score_items():
-    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+    api_key=os.environ.get("OPENAI_API_KEY","")
+    use_llm = api_key and not api_key.startswith("sk-dummy")
+    client = OpenAI(api_key=api_key) if use_llm else None
     items = json.loads(INGEST.read_text(encoding="utf-8"))
     cfg = yaml.safe_load(CONFIG.read_text())
     thresholds = cfg.get("thresholds", {"patch":7,"threat":7,"lab":6.5})
@@ -21,25 +31,29 @@ def score_items():
     for it in items[:60]: # cap cost
         pillar = it.get("pillar","all")
         th = thresholds.get(pillar, thresholds.get("all",7)) if pillar!="all" else 7
-        try:
-            resp = client.chat.completions.create(
-                model=os.environ.get("OPENAI_MODEL","gpt-4o-mini"),
-                messages=[
-                    {"role":"system","content":PROMPT},
-                    {"role":"user","content": f"Title: {it['title']}\nSummary: {it['summary']}\nSource: {it['source_url']}"}
-                ],
-                temperature=0.2, max_tokens=80
-            )
-            txt = resp.choices[0].message.content
-            import re, json as j
-            m=re.search(r'\{.*\}',txt, re.S)
-            data=j.loads(m.group(0)) if m else {"score":5,"reason":"parse fail"}
-            it["score"]=float(data.get("score",5))
-            it["score_reason"]=data.get("reason","")
-        except Exception as e:
-            print(f"score fail {it['title'][:40]}: {e}")
-            it["score"]=5.0
-            it["score_reason"]="fallback"
+        if not use_llm:
+            it["score"]=round(heuristic_score(it),1)
+            it["score_reason"]="heuristic AEST fallback"
+        else:
+            try:
+                resp = client.chat.completions.create(
+                    model=os.environ.get("OPENAI_MODEL","gpt-4o-mini"),
+                    messages=[
+                        {"role":"system","content":PROMPT},
+                        {"role":"user","content": f"Title: {it['title']}\nSummary: {it['summary']}\nSource: {it['source_url']}"}
+                    ],
+                    temperature=0.2, max_tokens=80
+                )
+                txt = resp.choices[0].message.content
+                import re, json as j
+                m=re.search(r'\{.*\}',txt, re.S)
+                data=j.loads(m.group(0)) if m else {"score":5,"reason":"parse fail"}
+                it["score"]=float(data.get("score",5))
+                it["score_reason"]=data.get("reason","")
+            except Exception as e:
+                print(f"score fail {it['title'][:40]}: {e} -> heuristic")
+                it["score"]=round(heuristic_score(it),1)
+                it["score_reason"]="heuristic fallback"
         if it["score"] >= th:
             scored.append(it)
     scored.sort(key=lambda x: x["score"], reverse=True)
