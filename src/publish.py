@@ -84,11 +84,10 @@ def send_via_telegram_gate(draft_md):
         return False
 
 def buffer_queue(draft_md, substack_url="https://theitsupportguru.substack.com"):
-    """Buffer/Publer queue for X/LinkedIn - free tier: 3 channels, 10 posts"""
+    """Buffer queue - legacy, free 3ch/10q - kept for compat"""
     token=os.environ.get("BUFFER_TOKEN","")
-    profiles=os.environ.get("BUFFER_PROFILE_IDS","") # comma sep e.g. "abc,def,ghi"
+    profiles=os.environ.get("BUFFER_PROFILE_IDS","")
     if not token or not profiles:
-        print("Buffer not configured - skip queue (set BUFFER_TOKEN + BUFFER_PROFILE_IDS for free tier)")
         return False
     try:
         import requests
@@ -97,16 +96,44 @@ def buffer_queue(draft_md, substack_url="https://theitsupportguru.substack.com")
             if line.startswith("# "):
                 title=line[2:].strip()[:80]; break
         text=f"{title} — {substack_url} #Windows #MSP #Cybersecurity AEST {datetime.now(AEST).strftime('%Y-%m-%d')}"
-        # Buffer free: queue to each profile
         for pid in [p.strip() for p in profiles.split(",") if p.strip()]:
             r=requests.post("https://api.bufferapp.com/1/updates/create.json",
                 data={"text": text[:260], "profile_ids[]": pid, "access_token": token}, timeout=10)
             print(f"Buffer queue {pid}: {r.status_code} {r.text[:120]}")
-        # Alternative free: Ayrshare/Publer - if BUFFER_TOKEN empty, try PUBLER_API_KEY
         return True
     except Exception as e:
         print(f"Buffer fail: {e}")
         return False
+
+def ayrshare_queue(draft_md, substack_url="https://theitsupportguru.substack.com"):
+    """Ayrshare free: 20 posts/mo, full API - https://api.ayrshare.com/api/post"""
+    token=os.environ.get("AYRSHARE_API_KEY","")
+    if not token or token.startswith("dummy"):
+        print("Ayrshare not configured - skip (set AYRSHARE_API_KEY free at app.ayrshare.com)")
+        return False
+    try:
+        import requests
+        title="The IT Support Guru Brief"
+        for line in draft_md.splitlines():
+            if line.startswith("# "):
+                title=line[2:].strip()[:90]; break
+        text=f"{title} — {substack_url}\n#Windows #Cybersecurity #MSP #EntraID AEST {datetime.now(AEST).strftime('%Y-%m-%d')}"
+        platforms=os.environ.get("AYRSHARE_PLATFORMS","twitter,linkedin,facebook").split(",")
+        platforms=[p.strip() for p in platforms if p.strip()]
+        payload={"post": text[:270], "platforms": platforms}
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        r=requests.post("https://api.ayrshare.com/api/post", json=payload, headers=headers, timeout=15)
+        print(f"Ayrshare queue {platforms}: {r.status_code} {r.text[:200]}")
+        return r.status_code in (200,201)
+    except Exception as e:
+        print(f"Ayrshare fail: {e}")
+        return False
+
+def metricool_mcp_note():
+    """Metricool MCP free - not API, via Claude/Cursor. See mcp/metricool-mcp.json"""
+    if os.environ.get("METRICOOL_MCP_ENABLED","")=="1":
+        print("Metricool MCP: use Claude/Cursor with Metricool MCP connector (Free plan, 20 posts/mo) - https://help.metricool.com/mcp-vs-api-access-what-is-the-difference-5y3ib")
+    return False
 
 def publish_email(draft_md):
     """Send via Substack Email-to-Post - whitelisted, no bot check"""
@@ -166,25 +193,23 @@ def publish_email(draft_md):
 
 if __name__ == "__main__":
     draft = load_draft()
-    # 1. Always apply AEST jitter (even for gate, so Telegram arrival is jittered)
     aest_jitter_sleep()
-    # 2. Gate check
     if should_auto_publish():
         print("Gate PASSED (auto) - publishing")
         ok=publish_email(draft)
         if ok:
-            buffer_queue(draft)
+            ayrshare_queue(draft) or buffer_queue(draft)
+            metricool_mcp_note()
     else:
         print("Gate ACTIVE (human approve) - sending to Telegram")
         sent = send_via_telegram_gate(draft)
         if not sent:
             print("Gate: draft awaiting manual publish - check drafts/ folder AEST")
-        # Also save email eml for manual review
         if os.environ.get("SMTP_USER"):
-            pass # already handled
+            pass
         else:
-            # create eml for manual review
             try:
                 publish_email(draft)
-                buffer_queue(draft)
+                ayrshare_queue(draft) or buffer_queue(draft)
+                metricool_mcp_note()
             except SystemExit: pass

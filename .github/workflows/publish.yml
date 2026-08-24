@@ -51,6 +51,9 @@ jobs:
           AUTO_PUBLISH: ${{ secrets.AUTO_PUBLISH }}
           BUFFER_TOKEN: ${{ secrets.BUFFER_TOKEN }}
           BUFFER_PROFILE_IDS: ${{ secrets.BUFFER_PROFILE_IDS }}
+          AYRSHARE_API_KEY: ${{ secrets.AYRSHARE_API_KEY }}
+          AYRSHARE_PLATFORMS: ${{ secrets.AYRSHARE_PLATFORMS }}
+          METRICOOL_MCP_ENABLED: ${{ secrets.METRICOOL_MCP_ENABLED }}
           CI: "1"
         run: python src/publish.py
       - name: Upload artifacts

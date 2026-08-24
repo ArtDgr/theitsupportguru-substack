@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "metricool": {
+      "command": "npx",
+      "args": ["-y", "@metricool/mcp-server"],
+      "env": {},
+      "description": "Metricool MCP - Free plan (20 posts/mo, any AI client). API requires Advanced, MCP works on Free per https://help.metricool.com/mcp-vs-api-access-what-is-the-difference-5y3ib"
+    }
+  }
+}
