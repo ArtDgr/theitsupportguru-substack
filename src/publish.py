@@ -194,22 +194,31 @@ def publish_email(draft_md):
 if __name__ == "__main__":
     draft = load_draft()
     aest_jitter_sleep()
+    # Always attempt social queue (Ayrshare free) even during gate - independent of Email
+    def try_social():
+        queued=False
+        if os.environ.get("AYRSHARE_API_KEY"):
+            queued=ayrshare_queue(draft) or queued
+        if os.environ.get("BUFFER_TOKEN"):
+            queued=buffer_queue(draft) or queued
+        if os.environ.get("METRICOOL_MCP_ENABLED")=="1":
+            metricool_mcp_note()
+        if not queued:
+            print("Social queue skipped - set AYRSHARE_API_KEY (free) or BUFFER_TOKEN")
+        return queued
     if should_auto_publish():
         print("Gate PASSED (auto) - publishing")
         ok=publish_email(draft)
         if ok:
-            ayrshare_queue(draft) or buffer_queue(draft)
-            metricool_mcp_note()
+            try_social()
     else:
         print("Gate ACTIVE (human approve) - sending to Telegram")
         sent = send_via_telegram_gate(draft)
         if not sent:
             print("Gate: draft awaiting manual publish - check drafts/ folder AEST")
-        if os.environ.get("SMTP_USER"):
-            pass
-        else:
-            try:
-                publish_email(draft)
-                ayrshare_queue(draft) or buffer_queue(draft)
-                metricool_mcp_note()
+        # Queue to Ayrshare even while gate active for testing (remove if you want gate-only)
+        try_social()
+        # Still create email eml for review if no real SMTP
+        if not os.environ.get("SMTP_USER") or os.environ.get("SMTP_USER","").startswith("dummy"):
+            try: publish_email(draft)
             except SystemExit: pass
