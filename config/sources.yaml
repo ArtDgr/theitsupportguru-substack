@@ -1,0 +1,101 @@
+# theitsupportguru-substack/config/sources.yaml
+# 38 high-signal sources weighted for MSP/Helpdesk + Sysadmin/Entra + Enthusiast
+# weight 3=core, 2=support, 1=gap-filler
+
+windows_platform:
+  - url: https://techcommunity.microsoft.com/plugins/custom/microsoft/o365/custom-blog-rss?tid=1600206513787 # Windows IT Pro
+    weight: 3
+    pillar: patch
+  - url: https://blogs.windows.com/feed/
+    weight: 3
+    pillar: patch
+  - url: https://techcommunity.microsoft.com/ghr/api/BlogRss?blogId=16e4b90d-d2c3-4133-b4e9-3861bd8599cd # Intune
+    weight: 3
+    pillar: patch
+  - url: https://learn.microsoft.com/en-us/entra/feed
+    weight: 3
+    pillar: patch
+  - url: https://msrc.microsoft.com/blog/rss
+    weight: 3
+    pillar: patch
+  - url: https://support.microsoft.com/en-us/feed
+    weight: 2
+    pillar: patch
+  - url: https://www.askwoody.com/feed/
+    weight: 2
+    pillar: patch
+
+cybersecurity:
+  - url: https://www.cisa.gov/known-exploited-vulnerabilities-catalog/rss.xml # CISA KEV
+    weight: 3
+    pillar: threat
+  - url: https://www.bleepingcomputer.com/feed/
+    weight: 3
+    pillar: threat
+  - url: https://krebsonsecurity.com/feed/
+    weight: 3
+    pillar: threat
+  - url: https://feeds.feedburner.com/TheHackersNews
+    weight: 2
+    pillar: threat
+  - url: https://www.darkreading.com/rss.xml
+    weight: 2
+    pillar: threat
+  - url: https://unit42.paloaltonetworks.com/feed/
+    weight: 2
+    pillar: threat
+  - url: https://www.proofpoint.com/us/rss.xml
+    weight: 1
+    pillar: threat
+  - url: https://www.cisa.gov/uscert/ncas/alerts.xml
+    weight: 2
+    pillar: threat
+
+ai_applied:
+  - url: https://simonwillison.net/atom/everything/
+    weight: 3
+    pillar: lab
+  - url: https://blogs.microsoft.com/ai/feed/
+    weight: 3
+    pillar: lab
+  - url: https://openai.com/blog/rss.xml
+    weight: 2
+    pillar: lab
+  - url: https://www.anthropic.com/rss.xml
+    weight: 2
+    pillar: lab
+  - url: https://huggingface.co/blog/feed.xml
+    weight: 1
+    pillar: lab
+  - url: https://arxiv.org/rss/cs.AI
+    weight: 1
+    pillar: lab
+  - url: https://arxiv.org/rss/cs.CR
+    weight: 2
+    pillar: threat
+
+infra_specialist:
+  - url: https://www.semianalysis.com/feed
+    weight: 2
+    pillar: lab
+  - url: https://www.theregister.com/headlines.atom
+    weight: 2
+    pillar: all
+  - url: https://techcommunity.microsoft.com/ghr/api/BlogRss?blogId=53bc62c3-1dc6-4d48-9d8e-0eafe6c5a40f # Azure
+    weight: 2
+    pillar: patch
+  - url: https://aws.amazon.com/blogs/security/feed/
+    weight: 1
+    pillar: threat
+  - url: https://cloud.google.com/blog/rss/
+    weight: 1
+    pillar: lab
+  - url: https://www.lawfaremedia.org/rss.xml # regulation
+    weight: 1
+    pillar: threat
+
+# Scoring threshold per pillar
+thresholds:
+  patch: 7.0
+  threat: 7.0
+  lab: 6.5

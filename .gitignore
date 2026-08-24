@@ -1,0 +1,4 @@
+.env
+out/email.eml
+__pycache__/
+*.pyc
