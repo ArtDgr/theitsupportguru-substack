@@ -86,11 +86,17 @@ Output markdown with title "# {{Title}} — {{Date AEST}}" and all required sect
     gem_key=os.environ.get("GEMINI_API_KEY","")
     if gem_key and not gem_key.startswith("dummy") and gem_key!="":
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=gem_key)
-            model=genai.GenerativeModel("gemini-1.5-flash")
-            resp=model.generate_content(system + "\n\n" + user)
-            draft=resp.text.strip()
+            try:
+                from google import genai as genai2
+                client=genai2.Client(api_key=gem_key)
+                resp=client.models.generate_content(model="gemini-2.5-flash", contents=system + "\n\n" + user)
+                draft=resp.text.strip()
+            except ImportError:
+                import google.generativeai as genai
+                genai.configure(api_key=gem_key)
+                model=genai.GenerativeModel("gemini-2.5-flash")
+                resp=model.generate_content(system + "\n\n" + user)
+                draft=resp.text.strip()
             if "<!-- paid -->" not in draft:
                 draft=draft.replace("## Paid Playbook","<!-- paid -->\n## Paid Playbook")
             DRAFTS.mkdir(parents=True, exist_ok=True)

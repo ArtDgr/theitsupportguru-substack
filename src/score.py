@@ -25,12 +25,18 @@ def heuristic_score(it):
     return min(10,s)
 
 def gemini_score(text):
-    """Gemini 1.5 Flash free tier scorer"""
-    import google.generativeai as genai
-    genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-    model=genai.GenerativeModel("gemini-1.5-flash")
-    resp=model.generate_content(PROMPT + "\n\n" + text)
-    return resp.text
+    """Gemini 2.5 Flash free tier scorer - google.genai"""
+    try:
+        from google import genai
+        client=genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+        resp=client.models.generate_content(model="gemini-2.5-flash", contents=PROMPT + "\n\n" + text)
+        return resp.text
+    except ImportError:
+        import google.generativeai as genai2
+        genai2.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+        model=genai2.GenerativeModel("gemini-2.5-flash")
+        resp=model.generate_content(PROMPT + "\n\n" + text)
+        return resp.text
 
 def score_items():
     gem_key=os.environ.get("GEMINI_API_KEY","")
@@ -54,7 +60,9 @@ def score_items():
                 it["score"]=float(data.get("score",5))
                 it["score_reason"]=data.get("reason","")+" (gemini)"
             except Exception as e:
-                print(f"gemini score fail {it['title'][:40]}: {e} -> heuristic")
+                # Fix charmap emoji error on Windows cp1252
+                safe_e=str(e).encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+                print(f"gemini score fail: {safe_e[:80]} -> heuristic")
                 it["score"]=round(heuristic_score(it),1)
                 it["score_reason"]="heuristic fallback"
         elif not use_openai:
