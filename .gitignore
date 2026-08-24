@@ -2,3 +2,4 @@
 out/email.eml
 __pycache__/
 *.pyc
+out/artifact-latest/
