@@ -1,31 +1,29 @@
-# .github/workflows/publish.yml - Fixed AEST UTC+10 year-round : 6:
-# GitHub cron is UTC only. AEST = UTC+10 fixed.
-# Target publish 06:12-06:27 AEST = 20:12-20:27 UTC prior day (jitter in publish.py)
-# Ingest at 04:00 AEST = 18:00 UTC prior day -> jitter adds 2h12m-2h27m
 name: publish-theitsupportguru
 
 on:
   schedule:
-    - cron: '0 18 * * 1' # Tue 06:00 AEST base (Mon 18:00 UTC) - Patch Brief
-    - cron: '0 18 * * 3' # Thu 06:00 AEST base (Wed 18:00 UTC) - Threat Watch
-    - cron: '0 18 * * 6' # Sun 06:00 AEST base (Sat 18:00 UTC) - Copilot Lab
-  workflow_dispatch: # manual AEST test
+    - cron: '0 18 * * 1'
+    - cron: '0 18 * * 3'
+    - cron: '0 18 * * 6'
+  workflow_dispatch:
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 180 # includes 2h+ jitter sleep
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: '3.11', cache: 'pip'}
+        with:
+          python-version: '3.11'
+          cache: 'pip'
       - run: pip install -r requirements.txt
       - name: Ingest RSS
         run: python src/ingest.py
       - name: Score relevance
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL || 'gpt-4o-mini' }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
         run: python src/score.py
       - name: Enrich (Tavily)
         env:
@@ -34,7 +32,7 @@ jobs:
       - name: Synthesize draft (Neutral Analyst, AEST)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL || 'gpt-4o' }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
         run: python src/synthesize.py
       - name: QA grounded check
         run: python src/qa.py
@@ -48,7 +46,7 @@ jobs:
           SMTP_FROM: ${{ secrets.SMTP_FROM }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          AUTO_PUBLISH: ${{ secrets.AUTO_PUBLISH }} # 0 during 30d gate, 1 after
+          AUTO_PUBLISH: ${{ secrets.AUTO_PUBLISH }}
           CI: "1"
         run: python src/publish.py
       - name: Upload artifacts
