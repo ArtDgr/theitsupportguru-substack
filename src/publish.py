@@ -5,7 +5,7 @@ publish.py: Email-to-Post publisher with AEST UTC+10 jitter + human gate : 6:
 - Gate: 30d human approve via Telegram, after AUTO_PUBLISH=true -> auto
 - Anti-bot: random Message-ID, human UA, varied subject, SPF/DKIM via SMTP
 """
-import os, random, time, smtplib, json, ssl
+import os, random, time, smtplib, json, ssl, tempfile
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from email.mime.text import MIMEText
@@ -42,8 +42,12 @@ def record_publish():
     key=f"published_{yyyymm}"
     state[key]=state.get(key,0)+1
     state["last_publish"]=now.isoformat()
-    state["approved_count"]=state.get("approved_count",0)+1
-    STATE.write_text(json.dumps(state, indent=2))
+    state["successful_run_count"]=state.get("successful_run_count",0)+1
+    # atomic write prevents race conditions
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, dir=str(STATE.parent), encoding="utf-8") as tf:
+        tf.write(json.dumps(state, indent=2))
+        tmp_path = tf.name
+    Path(tmp_path).replace(STATE)
 
 def aest_jitter_sleep():
     """Random sleep 06:12-09:47 AEST window - defeats cron-bot fingerprint, Substack variance"""
@@ -88,7 +92,7 @@ def should_auto_publish():
         return True
     if STATE.exists():
         s=json.loads(STATE.read_text())
-        if s.get("approved_count",0) >= 12: # ~30d at 3x/week
+        if s.get("successful_run_count",0) >= 12: # ~30d at 3x/week
             return True
     return False
 
@@ -103,67 +107,16 @@ def send_via_telegram_gate(draft_md):
         import requests
         aest_now = datetime.now(AEST).strftime("%Y-%m-%d %H:%M AEST")
         preview = draft_md[:3500]
-        kb = {"inline_keyboard": [[{"text":"✅ APPROVE & PUBLISH","callback_data":"approve"},{"text":"❌ REJECT","callback_data":"reject"}]]}
-        # Note: actual callback handling needs a small bot webhook - for now manual reply APPROVE
+        # rely purely on text instruction to reply "APPROVE" or "REJECT" (no inline keyboard - was broken)
         r=requests.post(f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id":chat,"text":f"📝 The IT Support Guru draft {aest_now}\n\n{preview}\n\nReply APPROVE to publish, REJECT to skip","reply_markup":kb}, timeout=15)
+            json={"chat_id":chat,"text":f"📝 The IT Support Guru draft {aest_now}\n\n{preview}\n\nReply APPROVE to publish, REJECT to skip"}, timeout=15)
         print(f"Telegram gate sent: {r.status_code}")
         return True
     except Exception as e:
         print(f"Telegram fail: {e}")
         return False
 
-def buffer_queue(draft_md, substack_url="https://theitsupportguru.substack.com"):
-    """Buffer queue - legacy, free 3ch/10q - kept for compat"""
-    token=os.environ.get("BUFFER_TOKEN","")
-    profiles=os.environ.get("BUFFER_PROFILE_IDS","")
-    if not token or not profiles:
-        return False
-    try:
-        import requests
-        title="The IT Support Guru Brief"
-        for line in draft_md.splitlines():
-            if line.startswith("# "):
-                title=line[2:].strip()[:80]; break
-        text=f"{title} — {substack_url} #Windows #MSP #Cybersecurity AEST {datetime.now(AEST).strftime('%Y-%m-%d')}"
-        for pid in [p.strip() for p in profiles.split(",") if p.strip()]:
-            r=requests.post("https://api.bufferapp.com/1/updates/create.json",
-                data={"text": text[:260], "profile_ids[]": pid, "access_token": token}, timeout=10)
-            print(f"Buffer queue {pid}: {r.status_code} {r.text[:120]}")
-        return True
-    except Exception as e:
-        print(f"Buffer fail: {e}")
-        return False
 
-def ayrshare_queue(draft_md, substack_url="https://theitsupportguru.substack.com"):
-    """Ayrshare free: 20 posts/mo, full API - https://api.ayrshare.com/api/post"""
-    token=os.environ.get("AYRSHARE_API_KEY","")
-    if not token or token.startswith("dummy"):
-        print("Ayrshare not configured - skip (set AYRSHARE_API_KEY free at app.ayrshare.com)")
-        return False
-    try:
-        import requests
-        title="The IT Support Guru Brief"
-        for line in draft_md.splitlines():
-            if line.startswith("# "):
-                title=line[2:].strip()[:90]; break
-        text=f"{title} — {substack_url}\n#Windows #Cybersecurity #MSP #EntraID AEST {datetime.now(AEST).strftime('%Y-%m-%d')}"
-        platforms=os.environ.get("AYRSHARE_PLATFORMS","twitter,linkedin,facebook").split(",")
-        platforms=[p.strip() for p in platforms if p.strip()]
-        payload={"post": text[:270], "platforms": platforms}
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-        r=requests.post("https://api.ayrshare.com/api/post", json=payload, headers=headers, timeout=15)
-        print(f"Ayrshare queue {platforms}: {r.status_code} {r.text[:200]}")
-        return r.status_code in (200,201)
-    except Exception as e:
-        print(f"Ayrshare fail: {e}")
-        return False
-
-def metricool_mcp_note():
-    """Metricool MCP free - not API, via Claude/Cursor. See mcp/metricool-mcp.json"""
-    if os.environ.get("METRICOOL_MCP_ENABLED","")=="1":
-        print("Metricool MCP: use Claude/Cursor with Metricool MCP connector (Free plan, 20 posts/mo) - https://help.metricool.com/mcp-vs-api-access-what-is-the-difference-5y3ib")
-    return False
 
 def publish_email(draft_md):
     """Send via Substack Email-to-Post - whitelisted, no bot check"""
@@ -226,31 +179,11 @@ if __name__ == "__main__":
         raise SystemExit(0)
     draft = load_draft()
     aest_jitter_sleep()
-    # Always attempt social queue (Ayrshare free) even during gate - independent of Email
-    def try_social():
-        queued=False
-        if os.environ.get("AYRSHARE_API_KEY"):
-            queued=ayrshare_queue(draft) or queued
-        if os.environ.get("BUFFER_TOKEN"):
-            queued=buffer_queue(draft) or queued
-        if os.environ.get("METRICOOL_MCP_ENABLED")=="1":
-            metricool_mcp_note()
-        if not queued:
-            print("Social queue skipped - set AYRSHARE_API_KEY (free) or BUFFER_TOKEN")
-        return queued
     if should_auto_publish():
         print("Gate PASSED (auto) - publishing")
         ok=publish_email(draft)
-        if ok:
-            try_social()
     else:
         print("Gate ACTIVE (human approve) - sending to Telegram")
         sent = send_via_telegram_gate(draft)
         if not sent:
             print("Gate: draft awaiting manual publish - check drafts/ folder AEST")
-        # Queue to Ayrshare even while gate active for testing (remove if you want gate-only)
-        try_social()
-        # Still create email eml for review if no real SMTP
-        if not os.environ.get("SMTP_USER") or os.environ.get("SMTP_USER","").startswith("dummy"):
-            try: publish_email(draft)
-            except SystemExit: pass
